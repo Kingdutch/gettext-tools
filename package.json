@@ -1,21 +1,20 @@
 {
-    "name": "devuo-gettext",
-    "author": "Diogo Correia <inlogic@gmail.com>",
+    "name": "msgintersect",
+    "author": "Alexander Varwijk <alexander@goalgorilla.com>",
     "description": "A Gettext .PO file intersection tool.",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "licenses": [
         {
-            "type": "MIT",
-            "url": "http://github.com/devuo/gettext/blob/master/LICENSE"
+            "type": "UNLICENSED",
+            "url": "http://github.com/Kingdutch/msgintersect/blob/master/LICENSE"
         }
     ],
-    "bugs": "",
     "repository": {
         "type": "git",
-        "url": "git://github.com/devuo/gettext.git"
+        "url": "git://github.com/Kingdutch/msgintersect.git"
     },
     "bin": {
-        "devuo-gettext": "bin/devuo-gettext"
+        "msgintersect": "bin/msgintersect"
     },
     "dependencies": {
         "celeri": "^0.3.3",
