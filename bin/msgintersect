@@ -12,13 +12,13 @@ const Gettext = require('node-gettext');
 // ----------------------------------------------------------------------------
 
 if (process.argv.length !== 5) {
-    console.log("Usage: node devuo-gettext :file1 :file2 :output");
+    console.log("Usage: node devuo-gettext :complete :subset :output");
     process.exit(1);
 }
 
 mergeAction({
-  file1: process.argv[2],
-  file2: process.argv[3],
+  complete: process.argv[2],
+  subset: process.argv[3],
   output: process.argv[4],
 });
 
@@ -26,13 +26,13 @@ mergeAction({
 // ----------------------------------------------------------------------------
 
 function mergeAction (data) {
-    if (!fs.existsSync(data.file1)) return error('> File "' + data.file1 + '" not found.');
-    if (!fs.existsSync(data.file2)) return error('> File "' + data.file2 + '" not found.');
+    if (!fs.existsSync(data.complete)) return error('> File "' + data.complete + '" not found.');
+    if (!fs.existsSync(data.subset)) return error('> File "' + data.subset + '" not found.');
 
     console.info('> Loading files'.green);
 
-    var file1 = fs.readFileSync(data.file1);
-    var file2 = fs.readFileSync(data.file2);
+    var file1 = fs.readFileSync(data.complete);
+    var file2 = fs.readFileSync(data.subset);
 
     var gtxt1 = new Gettext();
     var gtxt2 = new Gettext();
@@ -40,8 +40,8 @@ function mergeAction (data) {
     gtxt1.addTextdomain('en', file1);
     gtxt2.addTextdomain('en', file2);
 
-    console.info('- Found %d strings in "%s"'.blue, gtxt1.listKeys().length, data.file1);
-    console.info('- Found %d strings in "%s"'.blue, gtxt2.listKeys().length, data.file2);
+    console.info('- Found %d strings in "%s"'.blue, gtxt1.listKeys().length, data.complete);
+    console.info('- Found %d strings in "%s"'.blue, gtxt2.listKeys().length, data.subset);
 
     console.info('> Running comparison'.green);
 
