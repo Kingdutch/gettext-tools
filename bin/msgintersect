@@ -2,23 +2,23 @@
 
 'use strict';
 
-var fs = require('fs');
-var celeri = require('celeri');
-var colors = require('colors');
-var Gettext = require('node-gettext');
+const fs = require('fs');
+const readline = require('readline');
+const Gettext = require('node-gettext');
 
 // Command Registration
 // ----------------------------------------------------------------------------
 
-celeri.option({
-    'command': 'intersect :file1 :file2 :output',
-    'description': 'Intersects and generates a .PO file from the intersection of two other .PO files.'
-}, mergeAction);
+if (process.argv.length !== 5) {
+    console.log("Usage: node devuo-gettext :file1 :file2 :output");
+    process.exit(1);
+}
 
-// Initialization
-// ----------------------------------------------------------------------------
-
-celeri.parse(process.argv);
+mergeAction({
+  file1: process.argv[2],
+  file2: process.argv[3],
+  output: process.argv[4],
+});
 
 // Command Execution Callbacks
 // ----------------------------------------------------------------------------
@@ -69,11 +69,24 @@ function mergeAction (data) {
     var outputBuffer = gtxt2.compilePO();
 
     if (fs.existsSync(data.output)) {
-        celeri.confirm('File "' + data.output + '" already exists. Do you want to overwrite it?', function (yes) {
-            if (!yes) console.info('> Merge canceled.'.yellow);
+        const confirmOverwrite = () => {
+          prompt(`File "${data.output}" already exists. Do you want to overwrite it? [yes/no]`, (answer) => {
+            switch(answer) {
+              case 'n':
+              case 'no':
+                console.info('> Merge cancelled.');
+                break;
+              case 'y':
+              case 'yes':
+                writeOutput(data.output, outputBuffer);
+                break;
+              default:
+                confirmOverwrite();
+            }
+          });
+        };
 
-            writeOutput(data.output, outputBuffer);
-        });
+        confirmOverwrite();
     } else {
         writeOutput(data.output, outputBuffer);
     }
@@ -82,11 +95,24 @@ function mergeAction (data) {
 // Helpers
 // ----------------------------------------------------------------------------
 
+function prompt(question, callback) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  rl.question(question, (answer) => {
+    rl.close();
+
+    callback(answer);
+  });
+}
+
 function error (messageString) {
     console.error(messageString.red);
     process.exit(1);
 }
 
 function writeOutput (fileName, outputBuffer) {
-    fs.writeFile(fileName, outputBuffer);
+    fs.writeFileSync(fileName, outputBuffer);
 }
