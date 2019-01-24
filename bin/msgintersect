@@ -8,24 +8,32 @@ const fs = require('fs');
 const readline = require('readline');
 const Gettext = require('node-gettext');
 
-// Command Registration
+// Command Handling
 // ----------------------------------------------------------------------------
-
-if (process.argv.length !== 5) {
-    console.log("Usage: node devuo-gettext :complete :subset :output");
+if (process.argv.length === 5) {
+  mergeAction({
+    complete: process.argv[2],
+    subset: process.argv[3],
+    output: process.argv[4],
+  });
+}
+else if (process.argv.length === 6 && ['--yes', '-y', '--no', '-n'].indexOf(process.argv[2]) !== -1) {
+  mergeAction({
+    complete: process.argv[3],
+    subset: process.argv[4],
+    output: process.argv[5],
+  }, process.argv[2].replace(/-/g, ''));
+}
+else {
+    console.log("Usage: node msgintersect [--yes/--no] :complete :subset :output");
+    console.log("Prompts can be skipped with --yes or --no for non-interactive execution.");
     process.exit(1);
 }
-
-mergeAction({
-  complete: process.argv[2],
-  subset: process.argv[3],
-  output: process.argv[4],
-});
 
 // Command Execution Callbacks
 // ----------------------------------------------------------------------------
 
-function mergeAction (data) {
+function mergeAction (data, overwrite = null) {
     if (!fs.existsSync(data.complete)) return error('> File "' + data.complete + '" not found.');
     if (!fs.existsSync(data.subset)) return error('> File "' + data.subset + '" not found.');
 
@@ -66,29 +74,26 @@ function mergeAction (data) {
     console.info('- Found %d translated strings'.blue, translatedCount);
     console.info('- Found %d not translated strings'.blue, notTranslatedCount);
 
-    console.info('> Generating output'.green);
-
     var outputBuffer = gtxt2.compilePO();
 
     if (fs.existsSync(data.output)) {
-        const confirmOverwrite = () => {
-          prompt(`File "${data.output}" already exists. Do you want to overwrite it? [yes/no]`, (answer) => {
-            switch(answer) {
-              case 'n':
-              case 'no':
-                console.info('> Merge cancelled.');
-                break;
-              case 'y':
-              case 'yes':
-                writeOutput(data.output, outputBuffer);
-                break;
-              default:
-                confirmOverwrite();
-            }
-          });
+        const handleOverwrite = (answer) => {
+          switch (answer) {
+            case 'n':
+            case 'no':
+              console.info('> Merge cancelled.');
+              break;
+            case 'y':
+            case 'yes':
+              console.info('> Generating output'.green);
+              writeOutput(data.output, outputBuffer);
+              break;
+            default:
+              prompt(`File "${data.output}" already exists. Do you want to overwrite it? [yes/no] `, handleOverwrite);
+          }
         };
 
-        confirmOverwrite();
+        handleOverwrite(overwrite)
     } else {
         writeOutput(data.output, outputBuffer);
     }
