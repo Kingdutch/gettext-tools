@@ -1,0 +1,123 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const gettextParser = require('gettext-parser');
+
+// Command Handling
+// ----------------------------------------------------------------------------
+if (process.argv.length === 3) {
+  checkFile(process.argv[2]);
+}
+else {
+    console.log("Usage: node msgchecker :file");
+    process.exit(1);
+}
+
+// Command Execution Callbacks
+// ----------------------------------------------------------------------------
+
+function checkFile(filepath) {
+    if (!fs.existsSync(filepath)) return error('> File "' + filepath + '" not found.');
+
+    const filename = path.basename(filepath);
+
+    const file = fs.readFileSync(filepath);
+    const podata = gettextParser.po.parse(file);
+
+    let failedChecks = [];
+
+    Object.keys(podata.translations).forEach(context => {
+      Object.keys(podata.translations[context]).forEach(msgid => {
+        // Skip the header string.
+        if (context === '' && msgid === '') {
+          return;
+        }
+
+        const translation = podata.translations[context][msgid];
+
+        // Check for duplicate plural translations.
+        if (hasDuplicatePluralTranslation(translation)) {
+          failedChecks.push({
+            file: filename,
+            line: getLineNumber(msgid.substr(0, 70), file.toString('utf-8')),
+            failed: 'duplicate',
+            msigds: [translation.msgid, translation.msgid_plural],
+            // msgstr: translation.msgstr
+          });
+        }
+      });
+    });
+
+    console.log(failedChecks.map(JSON.stringify).join("\n"));
+
+}
+
+/**
+ * Checks whether a translation has duplicate plural values.
+ *
+ * @param {Object} translation
+ *   A translation entry from gettext-parser.
+ * @return {boolean}
+ *   Whether the translation contains duplicates for its plural values.
+ */
+function hasDuplicatePluralTranslation(translation) {
+  // If the translation doesn't contain plural values it can't have errors.
+  if (!translation.hasOwnProperty('msgid_plural')) {
+    return false;
+  }
+
+  const count = translation.msgstr.length;
+  // There are never many translations so just naively loop through
+  // them. However don't loop all the way to the end because the last item is
+  // already compared to everything else when it's reached.
+  for (let i = 0; i < count - 1; i++) {
+    // Ignore empty translations.
+    if (translation.msgstr[i] === '') {
+      continue;
+    }
+
+    // Loop through the rest of the array.
+    for (let j = 0; j < count; j++) {
+      // Don't compare the current element to itself.
+      if (i === j) continue;
+
+      // We've found a duplicate element so we're done.
+      if (translation.msgstr[i] === translation.msgstr[j]) {
+        return true;
+      }
+    }
+  }
+
+  // No errors found.
+  return false;
+}
+
+/**
+ * Returns the line number of the needle given file contents haystack.
+ *
+ * @param {string} needle
+ *   The string to find.
+ * @param {string} haystack
+ *   The contents of the file to search.
+ * @return {number}
+ *   The line number where the string was found (0 based counting).
+ *   Returns -1 if the needle could not be found.
+ */
+function getLineNumber(needle, haystack) {
+  const idx = haystack.indexOf(needle);
+
+  if (idx === false) return -1;
+  const beforeIdx = haystack.substr(0, idx);
+  return beforeIdx.split('\n').length - 1;
+}
+
+// Helpers
+// ----------------------------------------------------------------------------
+
+function error (messageString) {
+    console.error(messageString);
+    process.exit(1);
+}
