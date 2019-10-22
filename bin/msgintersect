@@ -107,8 +107,15 @@ function mergeAction (data, overwrite = null) {
           return;
         }
 
-        // Update the target translation if it exists.
-        if (translated.translations[context] && translated.translations[context][msgid]) {
+        // Update the target translation if it exists and they have the same
+        // number of possible values. This check avoids malformed po files that
+        // have duplicated keys for singular and plural translations from
+        // breaking the output. This offense happens in Drupal generated .po
+        // files for example.
+        if (
+          translated.translations[context] && translated.translations[context][msgid] &&
+          translated.translations[context][msgid].msgstr.length === untranslated.translations[context][msgid].msgstr.length
+        ) {
           untranslated.translations[context][msgid].msgstr = translated.translations[context][msgid].msgstr;
           translatedCount++;
         }
