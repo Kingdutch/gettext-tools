@@ -6,7 +6,8 @@ require('colors');
 
 const fs = require('fs');
 const readline = require('readline');
-const Gettext = require('node-gettext');
+const gettextParser = require('gettext-parser');
+const jsep = require('jsep');
 
 // Command Handling
 // ----------------------------------------------------------------------------
@@ -30,6 +31,37 @@ else {
     process.exit(1);
 }
 
+/**
+ * Parses a gettext Plural-Forms string.
+ *
+ * @param str
+ *   The string of the Plural-Forms header field of a po file.
+ * @return {{pluralCount: *, pluralCondition: *}}
+ *   Returns the number of plurals and a normalised expression tree for
+ *   the pluralCondition.
+ */
+function parsePluralForm(str) {
+  const PLURAL_FORM_REGEXP = /^\s*nplurals\s*=\s*([0-9]);\s*plural\s*=([\s%|&!=?:()<>0-9n]+)\s*;?\s*$/;
+
+  // Try to parse the number of plurals and the plural-from string.
+  const matches = PLURAL_FORM_REGEXP.exec(str);
+
+  if (matches === null) {
+    throw new Error(`Invalid Plural-Forms string found: '${str}'`);
+  }
+
+  // Ensure the pluralCount is an integer.
+  const pluralCount = parseInt(matches[1], 10);
+  // Parse the plural form string to an expression tree, this normalises any
+  // use of space or brackets and allows comparison.
+  const pluralCondition = jsep(matches[2]);
+
+  return {
+    pluralCount,
+    pluralCondition,
+  }
+}
+
 // Command Execution Callbacks
 // ----------------------------------------------------------------------------
 
@@ -39,42 +71,58 @@ function mergeAction (data, overwrite = null) {
 
     console.info('> Loading files'.green);
 
-    var file1 = fs.readFileSync(data.complete);
-    var file2 = fs.readFileSync(data.subset);
+    const translatedFile = fs.readFileSync(data.complete);
+    const untranslatedFile = fs.readFileSync(data.subset);
 
-    var gtxt1 = new Gettext();
-    var gtxt2 = new Gettext();
+    const translated = gettextParser.po.parse(translatedFile);
+    let untranslated = gettextParser.po.parse(untranslatedFile);
 
-    gtxt1.addTextdomain('en', file1);
-    gtxt2.addTextdomain('en', file2);
+    const translatedPluralForm = parsePluralForm(translated.headers['Plural-Forms']);
+    const untranslatedPluralForm = parsePluralForm(untranslated.headers['Plural-Forms']);
 
-    console.info('- Found %d strings in "%s"'.blue, gtxt1.listKeys().length, data.complete);
-    console.info('- Found %d strings in "%s"'.blue, gtxt2.listKeys().length, data.subset);
+    // If the plural forms are different then this could corrupt plural
+    // translations so we can not continue.
+    if (!deepEqual(translatedPluralForm, untranslatedPluralForm)) {
+      return error(`Can not merge translations with differing plural-forms: '${translated.headers['Plural-Forms']}' to '${untranslated.headers['Plural-Forms']}'.`)
+    }
+
+    const translatedFoundCount = Object.values(translated.translations).reduce((count, context) => count + Object.keys(context).length, 0);
+    const untranslatedFoundCount = Object.values(untranslated.translations).reduce((count, context) => count + Object.keys(context).length, 0);
+
+    console.info('- Found %d strings in "%s"'.blue, translatedFoundCount, data.complete);
+    console.info('- Found %d strings in "%s"'.blue, untranslatedFoundCount, data.subset);
 
     console.info('> Running comparison'.green);
 
-    var gtxt2Keys = gtxt2.listKeys();
-    var translatedCount = 0;
-    var notTranslatedCount = 0;
+    let translatedCount = 0;
+    let notTranslatedCount = 0;
 
-    for (var i = 0; i < gtxt2Keys.length; i += 1) {
-        var msgid = gtxt2Keys[i];
-        var msgstr = gtxt1.gettext(gtxt2Keys[i]);
-
-        if (msgstr == msgid) {
-            notTranslatedCount++;
-            continue;
+    Object.keys(untranslated.translations).forEach(context => {
+      Object.keys(untranslated.translations[context]).forEach(msgid => {
+        // Skip the header string.
+        if (context === '' && msgid === '') {
+          // Increase translated count because otherwise the "Found strings"
+          // reporting doesn't add up.
+          translatedCount++;
+          return;
         }
 
-        translatedCount++;
-        gtxt2.setTranslation('en', '', msgid, msgstr);
-    }
+        // Update the target translation if it exists.
+        if (translated.translations[context] && translated.translations[context][msgid]) {
+          untranslated.translations[context][msgid].msgstr = translated.translations[context][msgid].msgstr;
+          translatedCount++;
+        }
+        else {
+          notTranslatedCount++;
+        }
+      })
+    });
 
     console.info('> Comparison finished'.green);
     console.info('- Found %d translated strings'.blue, translatedCount);
     console.info('- Found %d not translated strings'.blue, notTranslatedCount);
 
-    var outputBuffer = gtxt2.compilePO();
+    const outputBuffer = gettextParser.po.compile(untranslated);
 
     if (fs.existsSync(data.output)) {
         const handleOverwrite = (answer) => {
@@ -122,4 +170,28 @@ function error (messageString) {
 
 function writeOutput (fileName, outputBuffer) {
     fs.writeFileSync(fileName, outputBuffer);
+}
+
+function deepEqual(x, y) {
+  if (x === y) {
+    return true;
+  }
+  else if ((typeof x == "object" && x != null) && (typeof y == "object" && y != null)) {
+    if (Object.keys(x).length !== Object.keys(y).length)
+      return false;
+
+    for (var prop in x) {
+      if (y.hasOwnProperty(prop))
+      {
+        if (! deepEqual(x[prop], y[prop]))
+          return false;
+      }
+      else
+        return false;
+    }
+
+    return true;
+  }
+  else
+    return false;
 }
