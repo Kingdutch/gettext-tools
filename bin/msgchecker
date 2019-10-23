@@ -11,48 +11,82 @@ const gettextParser = require('gettext-parser');
 if (process.argv.length === 3) {
   checkFile(process.argv[2]);
 }
+else if (process.argv.length === 5) {
+  checkFile(process.argv[4], process.argv[3]);
+}
 else {
-    console.log("Usage: node msgchecker :file");
+    console.log("Usage: node msgchecker [--fix :source] :file");
+    console.log("The --fix option can be used to specify a file that should be used to find fixed translations.");
     process.exit(1);
 }
 
 // Command Execution Callbacks
 // ----------------------------------------------------------------------------
 
-function checkFile(filepath) {
-    if (!fs.existsSync(filepath)) return error('> File "' + filepath + '" not found.');
+function checkFile(filepath, fixpath = null) {
+  const filename = path.basename(filepath);
 
-    const filename = path.basename(filepath);
+  const podata = loadPoFile(filepath);
+  const fixdata = fixpath ? loadPoFile(fixpath) : null;
 
-    const file = fs.readFileSync(filepath);
-    const podata = gettextParser.po.parse(file);
+  let failedChecks = [];
 
-    let failedChecks = [];
+  Object.keys(podata.translations).forEach(context => {
+    Object.keys(podata.translations[context]).forEach(msgid => {
+      // Skip the header string.
+      if (context === '' && msgid === '') {
+        return;
+      }
 
-    Object.keys(podata.translations).forEach(context => {
-      Object.keys(podata.translations[context]).forEach(msgid => {
-        // Skip the header string.
-        if (context === '' && msgid === '') {
-          return;
+      const translation = podata.translations[context][msgid];
+
+      // Check for duplicate plural translations.
+      if (hasDuplicatePluralTranslation(translation)) {
+        let check = {
+          file: filename,
+          line: getLineNumber(msgid.substr(0, 70), podata.toString('utf-8')),
+          failed: 'duplicate',
+          msigds: [translation.msgid, translation.msgid_plural],
+        };
+
+        // If we have fixdata available for this string then we try to remedy
+        // the cause.
+        if (fixdata && fixdata.translations[context] && fixdata.translations[context][msgid]) {
+          check.resolved = false;
+          for (let i = 0; i < translation.msgstr.length; i++) {
+            // Don't replace incorrect translations by no translations.
+            if (fixdata.translations[context][msgid].msgstr[i] !== '') {
+              translation.msgstr[i] = fixdata.translations[context][msgid].msgstr[i];
+              check.resolved = true;
+            }
+          }
         }
 
-        const translation = podata.translations[context][msgid];
-
-        // Check for duplicate plural translations.
-        if (hasDuplicatePluralTranslation(translation)) {
-          failedChecks.push({
-            file: filename,
-            line: getLineNumber(msgid.substr(0, 70), file.toString('utf-8')),
-            failed: 'duplicate',
-            msigds: [translation.msgid, translation.msgid_plural],
-            // msgstr: translation.msgstr
-          });
-        }
-      });
+        failedChecks.push(check);
+      }
     });
+  });
 
+  // If we don't have fix command we simply output all the errors.
+  if (fixdata === null) {
     console.log(failedChecks.map(JSON.stringify).join("\n"));
+  }
+  // Otherwise we try to write the file back in place.
+  else {
+    writeOutput(filepath, gettextParser.po.compile(podata));
+    const fixedCount = failedChecks.filter(check => check.resolved).length;
+    console.log(`Resolved ${fixedCount} of ${failedChecks.length} plural translation issues.`);
+  }
 
+}
+
+function loadPoFile(filepath) {
+  if (!fs.existsSync(filepath)) return error('> File "' + filepath + '" not found.');
+
+  const filename = path.basename(filepath);
+
+  const file = fs.readFileSync(filepath);
+  return gettextParser.po.parse(file);
 }
 
 /**
@@ -120,4 +154,8 @@ function getLineNumber(needle, haystack) {
 function error (messageString) {
     console.error(messageString);
     process.exit(1);
+}
+
+function writeOutput (fileName, outputBuffer) {
+  fs.writeFileSync(fileName, outputBuffer);
 }
